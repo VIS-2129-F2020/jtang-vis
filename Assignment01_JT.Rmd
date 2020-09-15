@@ -1,0 +1,452 @@
+---
+title: "Assignment01 VIS"
+author: "Jessica Tang"
+date: "9/15/2020"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+### Libraries
+```{r libraries}
+library(ggplot2)
+library(tidyverse)
+library(tidycensus)
+library(scales)
+```
+
+### Dataset
+
+I am using the same data I am using for Quant.
+
+**P. S. Thank you Carole and team for the feedback:** I tried to calculate Housing Cost (HC) as a percentage of Household Income (HINCP), a.k.a. HC/HINCP. However, I did a quick spot check and for some reason some values did not equal the pre-calculated Gross Rent as a Percentage of Household Income (GRPIP, which I renamed HCPIP). Thus, I continued to use the dataset's GRPIP (renamed: HCPIP) versus my mutation of HC/HINCP.
+
+```{r data, results = 'hide'}
+hh_rent_data <- get_pums(variables = c("SERIALNO",
+                                     "TEN",
+                                     "FS",
+                                     "LNGI",
+                                     "GRNTP",
+                                     "HINCP",
+                                     "GRPIP",
+                                     "NP"),
+                       state = "NY",
+                       year = 2018,
+                       survey = "acs1",
+                       recode = TRUE) %>% 
+  mutate(HC = GRNTP,
+         HCPIP = GRPIP,
+         Burdened = case_when(
+           HCPIP > 30 ~ "Yes",
+           TRUE ~ "No")) %>% 
+  filter(TEN_label == "Rented") %>% 
+  select(SERIALNO,
+         TEN_label,
+         FS_label,
+         LNGI_label,
+         HC,
+         HINCP,
+         HCPIP,
+         Burdened,
+         NP)
+
+
+hh_own_data <- get_pums(variables = c("SERIALNO",
+                                      "TEN",
+                                      "FS",
+                                      "LNGI",
+                                      "SMOCP",
+                                      "HINCP",
+                                      "OCPIP",
+                                      "NP"),
+                        state = "NY",
+                        year = 2018,
+                        survey = "acs1",
+                        recode = TRUE) %>% 
+  
+  mutate(HC = SMOCP,
+         HCPIP = OCPIP,
+         Burdened = case_when(OCPIP > 30 ~ "Yes",
+                              TRUE ~ "No")) %>% 
+  
+  filter(!TEN_label == "Rented",
+         !TEN_label == "Occupied without payment of rent",
+         !TEN_label == "N/A (GQ/vacant)") %>% 
+  
+  select(SERIALNO,
+         TEN_label,
+         FS_label,
+         LNGI_label,
+         HC,
+         HINCP,
+         HCPIP,
+         Burdened,
+         NP)
+
+
+all_hh <- rbind(hh_rent_data,
+                hh_own_data)
+```
+
+
+### Plot 1
+* Compares Household Income (continuous) and Rent (continuous). Indicates whether or not someone is Rent Burdened, but I don't know if this says much since theoretically it's just Income/Rent or rise/run...?
+
+* I had to cap a few of my Plots at income < 100,000, otherwise the axes would just get really squished. I also removed any income < 0
+
+* Looks like more people are rent-burdened than not
+
+* Note to self: How to create an axes break so that I can show millionaires on the same plot, without squishing axes?
+
+```{r Plot 1, results = 'hide'}
+ggplot(filter(all_hh,
+              TEN_label == "Rented",
+              HINCP < 100000,
+              HINCP > 0),
+       
+       aes(x = HINCP,
+           y = HC,
+           color = Burdened)) +
+  
+  ggtitle("Household Income and Rent") +
+  
+  geom_point(size = 0.75,
+             alpha = 0.05) +
+  
+  scale_x_continuous(name = "Household Income (Renters)",
+                     breaks = seq(0, 100000, by = 10000),
+                     labels = dollar) +
+  
+  scale_y_continuous(name = "Rent",
+                     breaks = seq(0, 15000, by = 500),
+                     labels = dollar) +
+  
+  scale_color_discrete(name = "Rent-Burdened?") +
+  
+  theme(axis.text.x = element_text(angle = 45)) +
+  
+  theme_bw()
+```
+
+### Plot 2
+
+* Compares Number of People in Household (discrete) and Tenure (discrete) with Household Income (continuous)
+
+* Looks like households that own free and clear (pink) have fewer people than households with mortgage or loan (blue)
+
+* Note to self: How to override alpha in the legend so that the legend dots are not so transparent?
+
+```{r Plot 2, results = 'hide'}
+ggplot(filter(all_hh,
+              HINCP < 100000,
+              HINCP > 0,
+              !TEN_label == "Rented"),
+       
+       aes(x = NP,
+           y = HINCP,
+           color = TEN_label)) +
+  
+  geom_point(alpha = 0.05,
+             position = "jitter") +
+  
+  scale_x_continuous(name = "Number of Persons in Household",
+                     breaks = seq(0, 20, by = 1)) +
+  
+  scale_y_continuous(name = "Household Income",
+                     breaks = seq(0, 100000, by = 10000),
+                     labels = dollar) + 
+  
+  scale_color_discrete(name = "Tenure") +
+  
+  theme_bw()
+```
+
+
+### Plot 3
+
+* This is a plot I made **after** the discussion on Tuesday. It is similar to Plot 2, and an improvement as well I think. Plus, I figured out how to increase the plot size dimensions.
+
+```{r Plot 3, fig.width = 12, fig.height = 3.5, results = 'hide'}
+ggplot (all_hh,
+        
+        aes(x = HCPIP,
+            y = NP,
+            color = TEN_label)) +
+  
+  geom_point(alpha = 0.3) +
+  
+  scale_x_continuous(name = "Housing Cost as a % of Household Income",
+                     breaks = seq(0, 100, 10)) +
+  
+  scale_y_continuous(name = "Number of Persons in Household",
+                   breaks = seq(0, 20, 1)) +
+  
+  scale_color_discrete(name = "Tenure") +
+  
+  theme_bw()
+```
+
+
+### Plot 4
+
+* Still compares Number of People in Household (discrete) and Tenure (discrete) with Household Income (continuous), just on a polar coordinate system.
+
+* Note to self: Still need to look into how to read this. Chris Dsida said the y-axis scale corresponds with distance from center?
+
+```{r Plot 4, results = 'hide'}
+ggplot(filter(all_hh,
+              HINCP < 100000,
+              HINCP > 0,
+              !TEN_label == "Rented"),
+       
+       aes(x = NP,
+           y = HINCP,
+           color = TEN_label)) +
+  
+  geom_point(alpha = 0.05,
+             position = "jitter") +
+  
+  scale_x_continuous(name = "Number of Persons in Household",
+                     breaks = seq(0, 20, by = 1)) +
+  
+  scale_y_continuous(name = "Household Income",
+                     breaks = seq(0, 100000, by = 10000)) + 
+  
+  scale_color_discrete(name = "Tenure") +
+  
+  coord_polar(theta = "x") +
+  
+  theme_gray()
+
+```
+
+
+### Plot 5
+
+* I am not really sure what I did here. I guess the plot shows that the maximum a non-English speaking household has earned, based on the ACS, is a little over 1.2 mil. Meanwhile, the maximum an English-speaking household has earned is almost 1.8 mil.
+
+* Question to self: Am I able to say that non-English-speaking households earn no more than 75% of what English-speaking households earn?
+
+```{r Plot 5, results = 'hide'}
+ggplot(all_hh,
+       
+       aes(x = LNGI_label,
+           y = HINCP)) +
+  
+  geom_bar(stat = "identity",
+           position = "dodge",
+           fill = "gray") +
+  
+  scale_x_discrete(name = "Household English Language Speaking Ability",
+                   labels = c("At least one",
+                              "No one")) +
+  
+  scale_y_continuous(name = "Household Income",
+                     breaks = seq(0, 2000000, by = 200000),
+                     labels = dollar) + 
+  
+  scale_fill_discrete(name = "Tenure") +
+  
+  theme_bw()
+```
+
+### Plot 6
+
+* Plots frequency/count (continuous) of Household Income (continuous)
+
+* I wonder what the spike is between people who make 600,000 and people who make 700,000
+
+* Tested out the `coord_flip()` function
+
+```{r Plot 6, results = 'hide'}
+ggplot(all_hh,
+       
+       aes(x = HINCP)) +
+  
+  geom_freqpoly(bins = 100) +
+  
+  scale_x_continuous (name = "Household income",
+                      breaks = seq(0, 2000000, 100000),
+                      labels = dollar) +
+  
+  coord_flip() +
+  
+  theme_minimal() +
+  
+  theme(axis.text.x = element_text(angle = 30))
+```
+
+### Plot 7a
+
+* Comparing type of Tenure (categorical) with Food Stamps (categorical).
+
+* For some reason I had a really hard time conceptualizing this plot and the relationship between the 2 variables, until I saw Jonathan Lee's work.
+
+* Note to self: Axis will not tilt x degrees if you put `theme(axis.text.x = element_text(angle = 30))` BEFORE `theme_minimal`. Have to put it AFTER.
+
+```{r Plot 7a, results = 'hide'}
+ggplot (all_hh,
+
+        aes(x = TEN_label,
+            fill = FS_label)) +
+  
+  geom_bar() + 
+  
+  scale_x_discrete(name = "Tenure",
+                   labels = c("Owned free and clear",
+                              "Owned with mortgage or loan",
+                              "Rented")) +
+  
+  scale_fill_discrete(name = "Food Stamps?") +
+  
+  theme_minimal()
+```
+
+### Plot 7b
+
+* Comparing type of Tenure (categorical) with Food Stamps (categorical). All I did here was change the position to "dodge".
+
+```{r Plot 7b, results = 'hide'}
+ggplot (all_hh,
+
+        aes(x = TEN_label,
+            fill = FS_label)) +
+  
+  geom_bar(position = "dodge") + 
+  
+  scale_x_discrete(name = "Tenure",
+                   labels = c("Owned free and clear",
+                              "Owned with mortgage or loan",
+                              "Rented")) +
+  
+  scale_fill_discrete(name = "Food Stamps?") +
+  
+  theme_minimal()
+```
+
+
+### Plot 8
+
+* Comparing Food Stamps (categorical) to Housing Cost as % of Income (HCPIP) in renter-occupied households.
+
+* Plot is darkest between 10 and 40 percent for both "No" and "Yes" because most people's rent falls within this percentage range as a percent of income.
+
+* Would be interesting to get more data on employment status of people who pay more than 30% of their income on rent and who are NOT on Food Stamps. Looking between the "No" and "Yes" columns, looks like almost half who are rent-burdened do take Food Stamps and half do not.
+
+```{r Plot 8, results = 'hide'}
+ggplot (filter(all_hh,
+               HCPIP < 100,
+               HCPIP > 0,
+               TEN_label == "Rented"),
+        
+        aes(x = FS_label,
+            y = HCPIP)) +
+  
+  geom_point(alpha = 0.05,
+             position = "jitter") +
+  
+  scale_x_discrete(name = "Food Stamps?") +
+  
+  scale_y_continuous(name = "Housing Cost as % of Income",
+                     breaks = seq(0, 100, by = 10)) +
+  
+  theme_minimal()
+```
+
+### Plot 9
+
+* I tried layering 3 violin plots -- one for each type of Tenure: Rented, Owned free and clear, and Owned with mortgage or loan. I hope my labeling is correct... but, assuming it is, this shows:
+
+  * More Households are less likely to be on Food Stamps than are likely.
+  * I am sure something else can be said about the relationship between Tenure (categorical), Food Stamps (categorical), and Housing Cost % (continuous).
+  
+* Note to self: How much less likely are these Households to be on Food Stamps? Can I calculate this by comparing the areas of the violins??
+
+```{r Plot 9, results = 'hide'}
+
+ggplot ( filter(all_hh,
+                HCPIP < 100,
+                HCPIP > 0,
+                TEN_label == "Rented"),
+        
+        aes(x = FS_label,
+            y = HCPIP,
+            color = "Rented")) +
+  
+  # Bottom violin plot (blue)
+  
+  geom_violin(alpha = 0) +
+  
+  scale_x_discrete(name = "Food Stamps?") +
+  
+  scale_y_continuous(name = "Housing Cost as a % of Household Income") +
+  
+  scale_color_discrete(name = "Tenure") +
+  
+  # Middle layer violin plot (green)
+  
+  geom_violin( data = filter(all_hh,
+                            HCPIP < 100,
+                            HCPIP > 0,
+                            TEN_label == "Owned with mortgage or loan (include home equity loans)"),
+              
+               aes(x = FS_label,
+                  y = HCPIP,
+                  color = "Owned with morgage or loan"),
+             
+               alpha = 0) +
+  
+  # Bottom layer violin plot (red)
+  
+  geom_violin( data = filter(all_hh,
+                            HCPIP < 100,
+                            HCPIP > 0,
+                            TEN_label == "Owned free and clear"),
+              
+               aes(x = FS_label,
+                   y = HCPIP,
+                   color = "Owned free and clear"),
+              
+               alpha = 0) +
+
+  theme_minimal()
+```
+
+
+### Plot 10
+
+* I started to get confused about what I have plotted and what I haven't -- which combinations I have exhausted vs. not. So I came up with a question:
+
+  Out of households that rent that make more than 60k, how many are burdened and how many of them have 0 people who speak English?
+  
+  * I am trying to overlay 2 histograms, but to no avail. I would like the Burdened/Not as anothre categorical variable that gets plotted, and want to highlight the overlap. Is this possible? Following the overlay structure that I used in `geom_violin` above did not work here.
+
+```{r Plot 10, fig.width = 12, results = 'hide'}
+ggplot (filter(all_hh,
+               HINCP > 60000,
+               TEN_label == "Rented"),
+        
+        aes(x = HCPIP,
+            color = LNGI_label)) +
+  
+geom_histogram() +
+
+  scale_x_continuous(name = "Housing Cost as a % of Household Income",
+                     breaks = seq(0, 100, 10)) + 
+  
+  scale_color_discrete(name = "English-speaking ability") + 
+  
+  
+
+  theme_light()
+```
+
+### Issues/Questions
+
+**Last Note to Self:** I am getting confused which dot plots do what... something to keep in mind. Also, I can ask a bunch of different questions and find out their different correlation "facts"/observations but what is the relationship between these things? From my current perspective, it seems difficult to tell the story without knowing causation / some qualitative data. An analogy I can make from thinking about my Land Use Law class is: I can know the facts of the case, but what are the implications of these facts? What facts/observations become background and what become major plot points?
