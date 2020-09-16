@@ -1,12 +1,15 @@
 ---
 title: "Assignment01 VIS"
 author: "Jessica Tang"
-date: "9/15/2020"
+date: "9/16/2020"
 output:
   html_document:
-    toc: true
-    toc_depth: 3
-    toc_float: TRUE
+    toc: yes
+    toc_deth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
 ---
 
 ```{r setup, include=FALSE}
@@ -24,8 +27,6 @@ library(scales)
 ### Dataset
 
 I am using the same data I am using for Quant.
-
-**P. S. Thank you Carole and team for the feedback:** I tried to calculate Housing Cost (HC) as a percentage of Household Income (HINCP), a.k.a. HC/HINCP. However, I did a quick spot check and for some reason some values did not equal the pre-calculated Gross Rent as a Percentage of Household Income (GRPIP, which I renamed HCPIP). Thus, I continued to use the dataset's GRPIP (renamed: HCPIP) versus my mutation of HC/HINCP.
 
 ```{r data, results = 'hide'}
 hh_rent_data <- get_pums(variables = c("SERIALNO",
@@ -425,7 +426,7 @@ ggplot ( filter(all_hh,
 
   Out of households that rent that make more than 60k, how many are burdened and how many of them have 0 people who speak English?
   
-  * I am trying to overlay 2 histograms, but to no avail. I would like the Burdened/Not as anothre categorical variable that gets plotted, and want to highlight the overlap. Is this possible? Following the overlay structure that I used in `geom_violin` above did not work here.
+  * I am trying to overlay 2 histograms, but to no avail. I would like the Burdened/Not as another categorical variable that gets plotted, and want to highlight the overlap. Is this possible? Following the overlay structure that I used in `geom_violin` above did not work here.
 
 ```{r Plot 10, fig.width = 12, results = 'hide'}
 ggplot (filter(all_hh,
@@ -449,4 +450,4 @@ geom_histogram() +
 
 ### Issues/Questions
 
-**Last Note to Self:** I am getting confused which dot plots do what... something to keep in mind. Also, I can ask a bunch of different questions and find out their different correlation "facts"/observations but what is the relationship between these things? From my current perspective, it seems difficult to tell the story without knowing causation / some qualitative data. An analogy I can make from thinking about my Land Use Law class is: I can know the facts of the case, but what are the implications of these facts? What facts/observations become background and what become major plot points?
+**Last Note to Self:** I am getting confused which dot plots do what... something to keep in mind.
