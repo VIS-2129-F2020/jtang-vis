@@ -1,0 +1,243 @@
+---
+title: "Assignment02 VIS"
+author: "jtang"
+date: "9/23/2020"
+output:
+  html_document:
+    toc: TRUE
+    toc_float:
+      collapsed: no
+---
+
+Referenced tutorials, Friday workshop, and Taelor's example assignment throughout.
+
+## Loading Libraries
+```{r, message=FALSE}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(sf)
+library(rnaturalearth)
+library(ggspatial)
+library(cartogram)
+library(ggthemes)
+library(gridExtra)
+```
+
+
+## Projections
+
+**Basic Map**
+```{r}
+china_provinces <- ne_states(country = "china", returnclass = "sf")
+
+china_map <- ggplot(china_provinces) +
+  geom_sf() +
+  annotation_scale()
+
+china_map
+```
+\
+\
+
+**Defining Projections**
+
+```{r}
+china_SRORG7564 <- "+proj=aea +lat_1=27 +lat_2=45 +lat_0=35 +lon_0=105 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=mm +no_defs"
+
+china_EPSG2401 <- "+proj=tmerc +lat_0=0 +lon_0=75 +k=1 +x_0=25500000 +y_0=0 +ellps=krass +units=m +no_defs"
+
+china_SRORG7271 <- "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=23 +lon_0=-96 +x_0=0 +y_0=0 +ellps=clrk66 +units=m +no_defs"
+```
+
+\
+
+**China Albers Equal Area Conic**
+
+```{r}
+ggplot(china_provinces) +
+  geom_sf() + 
+  coord_sf(crs = china_SRORG7564)
+```
+\
+\
+
+**Beijing 1954 / 3-degree Gauss-Kruger zone 25**
+
+```{r}
+ggplot(china_provinces) +
+  geom_sf() + 
+  coord_sf(crs = china_EPSG2401)
+```
+\
+\
+
+**Contiguous United States Albers Equal Area**
+
+Just wanted to see what this looked like.
+
+```{r}
+ggplot(china_provinces) +
+  geom_sf() + 
+  coord_sf(crs = china_SRORG7271)
+```
+
+
+**Transforming with China Albers Equal Area Conic**
+
+Ended up picking this transformation.
+
+```{r}
+china_provinces <- china_provinces %>% 
+  st_transform(crs = china_SRORG7564)
+```
+\
+\
+\
+
+## Gathering Data
+
+I looked for province-level data I could find on China. I chose [2014 education attainment data](https://chinapower.csis.org/data/education-attainment-province/) from the Center for Strategic and International Studies, who had gotten the data from the China National Bureau of Statistics / China Statistical Yearbook.
+
+Tidying education attainment data:
+
+* percentage signs --> no percentage signs
+
+* character --> numeric. Used `str()` to check structure
+
+I transformed a lot of the data but ended up only using the percentages of females and males who went to college. Also, I did a simple female_college + male_college to get total percentage of population in that province who went to college.
+
+```{r, message = FALSE}
+china_edu <- read_csv("china_educational-attainment.csv", col_names = TRUE) %>%
+  rename (postal = code) %>% 
+  mutate(female_never = as.numeric(sub("%", "", female_never)),
+         male_never = as.numeric(sub("%", "", male_never)),
+         female_primary = as.numeric(sub("%", "", female_primary)),
+         male_primary = as.numeric(sub("%", "", male_primary)),
+         female_junior = as.numeric(sub("%", "", female_junior)),
+         male_junior = as.numeric(sub("%", "", male_junior)),
+         female_senior = as.numeric(sub("%", "", female_senior)),
+         male_senior = as.numeric(sub("%","",male_senior)),
+         female_college = as.numeric(sub("%", "", female_college)),
+         male_college = as.numeric(sub("%", "", male_college)),
+         college = female_college + male_college)
+
+china_edu_join <- left_join(china_provinces, china_edu, by = "postal") %>% 
+  select(name,
+         female_never,
+         male_never,
+         female_primary,
+         male_primary,
+         female_junior,
+         male_junior,
+         female_senior,
+         female_college,
+         male_college,
+         college) %>% 
+  filter(!name == "Paracel Islands") 
+  
+```
+\
+\
+
+## Plotting Data
+
+### Chloropleth
+
+I wanted to compare % of Females in College with % of Males in College by province, so I installed the `gridExtra` package to place two plots side-by-side. I got suggestion from [here](https://stackoverflow.com/questions/1249548/side-by-side-plots-with-ggplot2).
+
+```{r, fig.width = 15}
+
+female_college_plot <- ggplot(china_edu_join,
+                                 aes(fill = female_college)) + 
+  geom_sf(color = "gray") +
+  scale_fill_viridis_c(option = "magma",
+                       name = "% of F in College",
+                       breaks = seq(0, 100, by = 10))
+    
+
+male_college_plot <- ggplot(china_edu_join,
+                               aes(fill = male_college)) +
+  geom_sf(color = "gray") +
+  scale_fill_viridis_c(option = "magma",
+                       name = "% of M in College",
+                       breaks = seq(0, 100, by = 10))
+
+
+grid.arrange(female_college_plot, male_college_plot, nrow = 1, ncol = 2)
+```
+\
+\
+
+### Proportional symbol
+
+(I originally wanted to put female_college first and male_college over it, and perhaps shift one over in case the color overlap was confusing. But the legends also ended up overlapping so I aborted mission. Carole said the tutorial for next week will cover layering of data, so I will try to figure this out then.)
+
+```{r}
+china_edu_centroids <- china_edu_join %>% 
+  st_centroid()
+
+ggplot(china_provinces) +
+  geom_sf(fill = NA, color = "gray") +
+  geom_sf(data = china_edu_centroids,
+          aes (size = college),
+          alpha = 0.5,
+          color = "purple4") +
+  scale_size_continuous(name = "% of Province Pop. w/ College Ed.",
+                        breaks = seq(0, 100, by = 20))
+```
+\
+\
+
+### Continuous cartogram
+
+I used % of Pop. w/ College Ed. for the shape and fill. These choices resulted in China's rooster shape looking like it's choking. Not sure about the story behind the empty chunk below the beige + pink--maybe that's just how the sizing worked out.
+
+```{r, message = FALSE}
+china_edu_carto <- china_edu_join %>% 
+  cartogram_cont("college")
+
+ggplot(china_edu_carto,
+       aes(fill = college)) +
+  geom_sf(color = "gray") + #(to change line size, size = x)
+  scale_fill_viridis_c(option = "magma",
+                       name = "% of Province Pop. w/ College Ed.",
+                       breaks = seq(0, 100, by = 10))
+```
+\
+\
+
+### Non-continuous cartogram
+
+Not very effective. Provinces are too small and I don't think one can tell the country.
+
+```{r}
+china_edu_ncarto <- china_edu_join %>% 
+  cartogram_ncont("college")
+
+ggplot(china_edu_ncarto,
+       aes(fill = college)) +
+  geom_sf(color = NA) +
+  scale_fill_viridis_c(option = "magma",
+                       name = "% of Province Pop. w/ College Ed.",
+                       breaks = seq(0, 100, by = 10))
+```
+\
+\
+
+### Dorling cartogram
+
+Looks more effective than the proportional symbol map, but with this one, one cannot tell one is looking at China nor what provinces to which dots. I may look into how to underlay a regular map of an area using the upcoming tutorial.
+
+```{r}
+china_edu_dor <- china_edu_join %>% 
+  cartogram_dorling("college")
+
+ggplot(china_edu_dor,
+       aes(fill = college)) +
+  geom_sf(color = NA) + 
+  scale_fill_viridis_c(option = "magma",
+                       name = "% of Province Pop. w/ College Ed.",
+                       breaks = seq(0, 100, by = 10))
+```
+
