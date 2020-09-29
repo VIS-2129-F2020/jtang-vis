@@ -1,0 +1,534 @@
+---
+title: "Assignment03 VIS"
+author: "Jessica Tang"
+date: "9/30/2020"
+output:
+  html_document:
+    theme: cosmo
+    toc: TRUE
+    toc_float:
+      collapsed: no
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**Libraries:**
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+library(sf)
+library(tidyverse)
+library(ggthemes)
+library(ggspatial)
+library(units)
+library(nngeo)
+library(cartogram)
+library(compare)
+# library(RSocrata) I could only access .json files with this API, so I had to download the .geojson files
+# library(ggmap)
+```
+
+## Issues I will be Submitting
+I know my Assignment has several issues and am anticipating that my grade on this will reflect that. But I am eager to find out what I did wrong.
+
+* Q1 and Q2: discrepancies with my original datasets and my joined datasets (will submit in Github)
+* Q3: could not calculate distances -- I printed the error a the bottom of this Rmd (will submit in Github)
+* I tried using `coord_sf(xlim, ylim)` to crop my map, but I got a bad map like the one [this person on Github](https://github.com/tidyverse/ggplot2/issues/2090) asked about and I couldn't figure it out (will submit in Github and/or do more Googling)
+* I don't know if my Dorling cartograms are effective or misleading
+
+Also this is my fault but I worked off an older syllabus, the one that asked for 8 plots and 15 possible combinations.
+
+## Loading & Transforming Data
+I got data from [NYC's Open Data portal](https://opendata.cityofnewyork.us/). I wanted to see if I were at a park or public plaza, where I would find two things -- Internet and water.
+
+I chose EPSG:2263 for New York City. Units are in feet. More info at [SpatialReference.org](https://spatialreference.org/ref/epsg/2263/) and [EPSG.io](https://epsg.io/2263).
+
+* 0 = Borough boundaries (polygon)
+
+* A = WiFi hotspots (point)
+
+* B = drinking fountains (point)
+
+* C = parks (polygon)
+
+* D = public plazas (polygon)
+
+```{r, message = FALSE, results = "hide"}
+
+nyc_epsg2263 <- "+proj=lcc +lat_1=41.03333333333333 +lat_2=40.66666666666666 +lat_0=40.16666666666666 +lon_0=-74 +x_0=300000.0000000001 +y_0=0 +ellps=GRS80 +datum=NAD83 +to_meter=0.3048006096012192 +no_defs"
+
+nyc <- st_read("Borough Boundaries.geojson") %>%
+  st_transform(nyc_epsg2263)
+
+wifi <- st_read("NYC Wi-Fi Hotspot Locations.geojson") %>% 
+  st_transform(nyc_epsg2263)
+
+fountains <- st_read("NYC Parks Drinking Fountains.geojson") %>% 
+  st_transform(nyc_epsg2263)
+
+parks <- st_read("Open Space (Parks).geojson") %>% 
+  st_transform(nyc_epsg2263)
+
+plazas <- st_read("Public Plazas.geojson") %>% 
+  st_transform(nyc_epsg2263)
+```
+
+## General Plot
+
+(You can't really see the plazas)
+
+```{r, out.width = "100%"}
+ggplot() +
+  geom_sf(data = nyc, fill = "gray96", color = NA) +
+  geom_sf(data = parks, fill = "darkseagreen4", color = NA) +
+  geom_sf(data = plazas, fill = "khaki2", color = NA) +
+  geom_sf(data = wifi, color = "darkorchid2", size = 0.01) +
+  geom_sf(data = fountains, color = "cyan3", size = 0.1) +
+  theme_map()
+```
+
+## Q1
+
+Number and proportion of Wifi hotspots (A) within 0.25 miles or 1320 ft of drinking fountains (B).
+
+I am having difficulty here, spoke with Carole about it, and will be submitting an issue. Everything plots fine, but there is a discrepancy in the numbers. I decided to create `wifi_join` so I can see the discrepancy better.
+
+`wifi_join` somehow has ~850 observations (4,171) than the original `wifi` (3,319), which I don't quite understand because it's a join? So I am not sure which number to choose when calculating my proportions. I have the same issue with Question 2, finding drinking fountains within 0.25 miles of WiFi hotspots (though the discrepancy is way less pronounced there).
+
+```{r}
+# Create fountains_buffer polygon
+fountains_buffer <- st_buffer(fountains, dist = 1320) %>% 
+  st_union()
+
+# Now 2539 observations meaning that many Wifi hotspots within 0.25 of drinking fountains
+wifi_fountains <- wifi[fountains_buffer,]
+
+# Join wifi df and wifi_fountains df to get new wifi_join df.
+wifi_join <- st_join(wifi, wifi_fountains) %>% 
+  mutate(near_fountains = !is.na(name.y))
+```
+
+```{r}
+# Number of Wifi hotspots near drinking fountains. The sum() is a count of TRUEs.
+sum(wifi_join$near_fountains)
+
+# Number of Wifi hotspots total, which = length of any column in the wifi df.
+length(wifi_join$near_fountains)
+
+# or is it
+nrow(wifi)
+
+# Proportion
+sum(wifi_join$near_fountains)/length(wifi_join$near_fountains)
+
+# or is it
+sum(wifi_join$near_fountains)/nrow(wifi)
+```
+
+```{r map1, out.width = "100%"}
+ggplot() +
+  geom_sf(data = nyc,
+          fill = NA,
+          color = "gray95") +
+  geom_sf(data = fountains_buffer,
+          color = NA,
+          fill = "gray88",
+          alpha = 0.7) +
+  geom_sf(data = wifi_join,
+          aes(color = near_fountains),
+          size = 0.2) +
+  scale_color_manual(values = c("black", "cyan3"),
+                     name = "Hotspot near Fountain?",
+                     labels = c("No", "Yes")) +
+  labs(title = "WiFi Hotspots near Drinking Fountains",
+       caption = "Of 3,319 Wifi hotspots in NYC, 3,000 (72%) are within 0.25 mi of a drinking fountain.") +
+  theme_map() +
+  theme(panel.background = element_rect(color = "gray88")) +
+    theme(legend.position = "right",
+          legend.background = element_rect(fill = alpha("white",0.5)),
+          panel.background = element_rect(fill = NA,
+                                          color = "gray88"),
+          plot.title = element_text(face = "bold"),
+          plot.caption = element_text(hjust = 0, size = 10))
+```
+
+
+## Q2
+
+Number and proportion of drinking fountains (B) within 0.25 miles or 1320 ft of WiFi hotspots (A).
+
+I am having the same issue here as with Question 1. My `fountains_join` somehow has 8 more observations than the original `fountains`. I tried to look up functions that would return the discrepancies between the two tables, but was running out of time trying to troubleshoot.
+
+```{r}
+wifi_buffer <- st_buffer(wifi, dist = 1320) %>% 
+  st_union()
+
+fountains_wifi <- fountains[wifi_buffer,]
+
+fountains_join <- st_join(fountains, fountains_wifi) %>% 
+  mutate(near_wifi = !is.na(system.y))
+```
+
+```{r}
+# Number of fountains near Wifi hotspots.
+sum(fountains_join$near_wifi)
+
+# Number of fountains total
+length(fountains_join$near_wifi)
+
+# or is it
+nrow(fountains)
+
+# Proportion
+sum(fountains_join$near_wifi) / length(fountains_join$near_wifi)
+
+# or is it
+sum(fountains_join$near_wifi) / nrow(fountains)
+```
+
+```{r map2, out.width = "100%"}
+ggplot() +
+  geom_sf(data = nyc,
+          fill = NA,
+          color = "gray95") +
+  geom_sf(data = fountains_buffer,
+          color = NA,
+          fill = "gray80",
+          alpha = 0.7) +
+  geom_sf(data = fountains_join,
+          aes (color = near_wifi),
+          size = 0.2) +
+  scale_color_manual(name = "Drinking fountain near hotspot?",
+                     values = c("black","darkorchid2"),
+                     labels = c("No","Yes")) +
+  labs(title = "Drinking fountains near Wifi hotspots",
+       caption = "Of 3,128 drinking fountains in NYC, 1,828 (58.4%) are within 0.25 mi of a Wifi hotspot.") +
+  theme_map() +
+  theme(panel.background = element_rect(color = "gray88")) +
+    theme(legend.position = "right",
+        legend.background = element_rect(fill = alpha("white",0.5)),
+        panel.background = element_rect(fill = NA,
+                                        color = "gray88"),
+        plot.title = element_text(face = "bold"),
+        plot.caption = element_text(hjust = 0, size = 10))
+```
+
+## Q6
+
+Number and proportion of Wifi hotspots (A) within Parks (C).
+
+```{r}
+# Adding a column with each row showing # of Wifi hotspots that fall in that park.
+parks <- parks %>% 
+  mutate(num_wifi = lengths(st_covers(parks,wifi)))
+
+# Number of Wifi hotspots within Parks
+sum(parks$num_wifi)
+
+# Number of Wifi hotspots
+nrow(wifi)
+
+# Proportion:
+sum(parks$num_wifi) / nrow(wifi)
+```
+
+```{r map3, out.width = "100%"}
+ggplot(parks) +
+  geom_sf(data = nyc,
+          color = "gray88",
+          fill = "gray96") +
+  geom_sf(aes(fill = num_wifi),
+          color = NA) +
+  scale_fill_viridis_b(name = "# of hotspots",
+                       breaks = seq(0, 16, by = 2)) +
+  labs(title = "WiFi Hotspots in Parks",
+       caption = "Of the 3,319 WiFi hotspots in NYC, 416 (12.5%) are within parks.") +
+  theme_map() +
+  theme(legend.position = "right",
+        legend.background = element_rect(fill = alpha("white",0.5)),
+        panel.background = element_rect(fill = NA,
+                                        color = "gray88"),
+        plot.title = element_text(face = "bold"),
+        plot.caption = element_text(hjust = 0, size = 10))
+```
+
+## Q7
+
+Number and proportion of Wifi hotspots (A) within Plazas (D).
+
+```{r}
+plazas <- plazas %>% 
+  mutate(num_wifi = lengths(st_covers(plazas,wifi)))
+
+# Number of Wifi hotspots within Parks
+sum(plazas$num_wifi)
+
+# Number of Wifi hotspots
+nrow(wifi)
+
+# Proportion
+sum(plazas$num_wifi) / nrow(wifi)
+```
+
+
+```{r}
+# This plot is not that great. Please see next one, where I applied st_centroid().
+
+ggplot(plazas) +
+  geom_sf(data = nyc,
+          color = NA) +
+  geom_sf(aes(fill = num_wifi),
+          color = NA) +
+  scale_fill_viridis_b(name = "# of WiFi hotspots",
+                       breaks = seq(0, 4, by = 1)) +
+  theme_map() + 
+  theme(legend.position = "right")
+```
+
+
+```{r}
+# Thanks Carole for suggesting I apply st_centroid so I can do a proportional dot symbol plot.
+plazas2 <- st_centroid(plazas)
+
+# Number of Wifi hotspots within Parks
+sum(plazas2$num_wifi)
+
+# Number of Wifi hotspots
+nrow(wifi)
+
+# Proportion
+sum(plazas2$num_wifi) / nrow(wifi)
+```
+
+
+```{r map4, out.width="100%"}
+# I had to filter out the 0 hotspots, otherwise the plot would show purple dots for 0 as well (is it supposed to?)
+ggplot(plazas2 %>% filter(!num_wifi == 0)) +
+  geom_sf(data = nyc,
+          color = "gray88",
+          fill = "gray96") +
+  geom_sf(aes(size = num_wifi),
+          color = "darkorchid2",
+          alpha = 0.5) +
+  scale_size_continuous(name = "# of hotspots",
+                        breaks = seq(1, 4, by = 1)) +
+  labs(title = "WiFi Hotspots in Plazas",
+       caption = "Of the 3,319 WiFi hotspots in NYC, 17 (0.5%) are within public plazas.
+       \nWould be nice if this percentage were a bit higher... but
+       \nperhaps private businesses in these plazas
+       \nprovide their own WiFi networks not captured in the dataset.") +
+  theme_map() +
+  theme(legend.position = "right",
+        legend.background = element_rect(fill = alpha("white",0.5)),
+        panel.background = element_rect(fill = NA,
+                                        color = "gray88"),
+        plot.title = element_text(face = "bold"),
+        plot.caption = element_text(hjust = 0, size = 10))
+
+```
+
+## Q8
+
+Number and proportion of drinking fountains (B) within plazas (D). (I ended up not plotting drinking fountains within parks because I'm pretty sure the dataset of the drinking fountains is from NYC Parks and Rec. and is of their fountains only.)
+
+```{r}
+plazas <- plazas %>% 
+  mutate(num_fountains = lengths(st_covers(plazas,fountains)))
+
+# Number of fountains within Plazas
+sum(plazas$num_fountains)
+
+# Number of fountains
+nrow(fountains)
+
+# Proportion
+sum(plazas$num_fountains) / nrow(fountains)
+```
+
+```{r}
+plazas2 <- st_centroid(plazas)
+```
+
+```{r map5, output.width="100%"}
+ggplot(plazas2 %>% filter(!num_fountains == 0)) +
+  geom_sf(data = nyc,
+          color = "gray88",
+          fill = "gray96") +
+  geom_sf(aes(size = num_fountains),
+          color = "cyan3",
+          alpha = 0.5) +
+  scale_size_continuous(name = "# of fountains",
+                        breaks = seq(1, 4, by = 1)) +
+  labs(title = "Drinking Fountains in Plazas",
+       caption = "Of 3,120 drinking fountains in NYC, 7 of them (0.2%) are within public plazas.
+       \nThis dataset of public drinking fountains may not account for
+       \nbottle-fillers, etc. that private entities may or may not provide.") +
+  theme_map() +
+  theme(legend.position = "right",
+        legend.background = element_rect(fill = alpha("white",0.5)),
+        panel.background = element_rect(fill = NA,
+                                        color = "gray88"),
+        plot.title = element_text(face = "bold"),
+        plot.caption = element_text(hjust = 0, size = 10))
+```
+
+
+## Q11
+
+Number and proportion of Plazas (D) that contain Wifi hotspots (A).
+
+```{r}
+plazas <- plazas %>% 
+  mutate(has_wifi = num_wifi > 0)
+
+# Plazas with Wifi hotspots
+sum(plazas$has_wifi)
+
+# Number of Plazas
+nrow(plazas)
+
+# Proportion
+sum(plazas$has_wifi) / nrow(plazas)
+```
+```{r map6}
+ggplot()+
+  geom_sf(data = nyc,
+          fill = NA,
+          color = "gray95") +
+  geom_sf(data = plazas,
+          aes (color = has_wifi),
+          size = 2) +
+  scale_color_manual(name = "Wifi hotspot in plaza?",
+                     values = c("gray88","darkorchid2"),
+                     labels = c("No","Yes")) +
+  labs(title = "Plazas that have Wifi hotspots",
+       caption = "Of 1,360 plazas in NYC, 13 (0.96%) have Wifi hotspots.") +
+  theme_map() +
+  theme(panel.background = element_rect(color = "gray88")) +
+    theme(legend.position = "right",
+        legend.background = element_rect(fill = alpha("white",0.5)),
+        panel.background = element_rect(fill = NA,
+                                        color = "gray88"),
+        plot.title = element_text(face = "bold"),
+        plot.caption = element_text(hjust = 0, size = 10))
+```
+
+## Q14
+
+Number and proportion of Parks (C) that have overlapping Plazas (D).
+
+I don't know if the following map is effective -- I'm running into the issue where the polygons are too small for a meaningful map to be made using `aes(fill = parks)`, so I tried to make a Dorling cartogram instead. However, I think there is a false impression that all parks that fall within the confines of the dots have overlapping plazas, when really it's just 1 park that has 1 plaza.
+
+I tried to change the size of the Dorling dots but I'm not sure if I can, because I'm supplying a polygonal dataset... maybe I have to turn the polygons into points using `st_centroid()` first?
+
+```{r}
+# Applying st_overlaps
+parks <- parks %>% 
+  mutate(num_plazas = lengths(st_overlaps(parks,plazas))) %>% 
+  mutate(has_plazas = num_plazas > 0)
+
+# Number of Parks that overlap Plazas
+sum(parks$has_plazas)
+
+# Number of Parks
+nrow(parks)
+
+# Proportion
+sum(parks$has_plazas) / nrow(parks)
+```
+
+```{r}
+parks_dor <- parks %>% 
+  cartogram_dorling("num_plazas")
+```
+
+```{r map7, out.width = "100%"}
+ggplot()+
+  geom_sf(data = nyc,
+          color = "gray6",
+          fill = NA) +
+  geom_sf(data = parks,
+          fill = "gray6",
+          color = NA) +
+  geom_sf(data = parks_dor,
+          aes(fill = num_plazas),
+          color = NA) +
+  scale_fill_viridis_c(name = "No. of Plazas",
+                       breaks = seq(0, 1, by = 1)) +
+  labs(title = "Parks that have Overlapping Plazas",
+       caption = "Each of the 9 dots represents 1 park that has 1 overlapping plaza.
+                  \nOut of 12,491 parks, 9 of them (0.07%) have overlapping plazas.") +
+  theme_map() +
+  theme(legend.position = "right",
+        legend.background = element_rect(fill = alpha("white",0.5)),
+        panel.background = element_rect(fill = NA,
+                                        color = "gray88"),
+        plot.title = element_text(face = "bold"),
+        plot.caption = element_text(hjust = 0, size = 10))
+```
+
+## Q15
+
+Number and proportion of Plazas (D) that have overlapping Parks (C).
+
+I did the same thing here with the map as I did with Question 14 -- created a Dorling cartogram.
+
+```{r}
+# Applying st_overlaps
+plazas <- plazas %>% 
+  mutate(num_parks = lengths(st_overlaps(plazas, parks))) %>% 
+  mutate(has_parks = num_parks > 0)
+
+# Number of Plazas that in some way touch Parks (= overlaps)
+sum(plazas$has_parks)
+
+# Number of Plazas
+nrow(plazas)
+
+# Proportion
+sum(plazas$has_parks) / nrow(plazas)
+```
+
+```{r}
+plazas_dor <- plazas %>% 
+  cartogram_dorling("num_parks")
+```
+
+```{r map8, out.width = "100%"}
+ggplot() +
+  geom_sf(data = nyc,
+          fill = "black",
+          color = "black") +
+  geom_sf(data = plazas_dor,
+          aes(fill = num_parks),
+          color = NA) +
+  scale_fill_continuous(name = "No. of Parks",
+                        breaks = seq(0,2,by = 1)) +
+  labs(title = "Plazas that have Overlapping Parks",
+       caption = "Each dots shows the number of parks that overlap a plaza.
+                  \nOut of 1,360 plazas, 7 of them (0.05%) have overlapping parks.") +
+  theme_map() +
+  theme(legend.position = "right",
+        legend.background = element_rect(fill = alpha("white",0.5)),
+        panel.background = element_rect(fill = NA,
+                                        color = "gray88"),
+        plot.title = element_text(face = "bold"),
+        plot.caption = element_text(hjust = 0, size = 10))
+```
+
+
+## Q3
+
+I flat-out got errors here, and so I skipped all distance visualizations.
+
+Average distance between Wifi hotspots (A) and nearest drinking fountains (B).
+
+```{r, error = TRUE}
+wifi <- wifi %>% 
+  mutate(fountain_dist = st_nn(wifi, fountains,
+                               returnDist = TRUE)$dist) %>% 
+  mutate(fountain_dist = as.numeric(fountain_dist))
+
+st_nn(wifi,fountains,
+      returnDist = TRUE)
+```
