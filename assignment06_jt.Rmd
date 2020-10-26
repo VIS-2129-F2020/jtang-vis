@@ -1,0 +1,110 @@
+---
+title: "Assignment06 VIS"
+author: "Jessica Tang"
+date: "10/23/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Three questions:
+* How do I outline-highlight an area?
+* How do I have the pop-up show information from another dataframe? I tried creating a new dataset by joining the two by "address" column, but got error saying cannot join dataframes with st information. So I tried to do st_join but then it gave me a lot of duplicates.
+* Having difficulty with setMaxBounds
+
+```{r}
+library(osmdata)
+library(opentripplanner)
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(htmltools)
+library(htmlwidgets)
+library(raster)
+```
+
+```{r}
+polling <- st_read("https://data.cambridgema.gov/api/geospatial/krvc-8hz2?method=export&format=GeoJSON")
+boundary <- st_read("https://data.cambridgema.gov/api/geospatial/hqir-i45z?method=export&format=GeoJSON")
+```
+
+```{r}
+path_otp <- otp_dl_jar("OTP")
+path_data <- file.path(getwd(), "OTP")
+path_otp <- paste(path_data, "otp.jar", sep = "/")
+otp_setup(otp = path_otp, dir = path_data, memory = 1024)
+otpcon <- otp_connect()
+```
+
+```{r}
+iso_8min_walk <- otp_isochrone(otpcon = otpcon, fromPlace = polling,
+                                               mode = "walk", cutoffSec = 480) %>%
+      mutate(mode = "walk",
+         address = polling$address)
+
+iso_8min_walk <- iso_8min_walk %>% 
+  mutate(area_sqmi = as.numeric(st_area(iso_8min_walk)/2590000))
+```
+
+```{r}
+polling2 <- st_join(polling, iso_8min_walk)
+```
+```{r}
+binpal <- colorBin(palette = "Blues",
+                   domain = iso_8min_walk$area_sqmi,
+                   bins = 4,
+                   pretty = FALSE)
+```
+
+```{r}
+map <- leaflet(options = leafletOptions(minZoom = 13, maxZoom = 17)) %>%
+  addProviderTiles("CartoDB.Positron") %>% 
+  addPolygons(data = boundary,
+              fillColor = "transparent",
+              color = "gray",
+              fillOpacity = .75,
+              weight = 2) %>% 
+  addPolygons(data = iso_8min_walk,
+              fillColor = binpal(iso_8min_walk$area_sqmi),
+              fillOpacity = .75,
+              stroke = FALSE,
+              label = paste(round(iso_8min_walk$area_sqmi, 3), "mi^2"),
+              #highlightOptions = highlightOptions(color = "black",
+              #                                    weight = 2,
+              #                                    bringToFront = TRUE),
+              highlightOptions = highlightOptions(fillColor = "navy")) %>% 
+  addCircles(data = polling,
+             color = "white",
+             opacity = 1,
+          #  label = lapply(labs, htmltools::HTML))
+             label = paste(polling$location, ", ", polling$address, sep = "")) %>% 
+  addControl("Polling Locations and their <br> 8-min. Walking Distances <br> in Cambridge, MA", position = "topright") %>%
+  addControl('<a href="https://data.cambridgema.gov/General-Government/Elections-Polling-Locations/krvc-8hz2">Data source</a> <br>
+             Isochrones made with <a href = "https://www.opentripplanner.org/">OpenTripPlanner</a>',
+             position = "bottomleft") %>% 
+  addLegend("topright",
+            pal = binpal,
+            values = iso_8min_walk$area_sqmi,
+            opacity = 0.75,
+            title = "Total Sq. Mi. <br> of Walkshed")
+#  setMaxBounds(lng1 = 42.35253,
+#               lat1 = -71.1604,
+#               lng2 = 42.40376,
+#               lat2 = -71.06404)
+
+map
+```
+
+```{r}
+saveWidget(map, file = "assignment06_jt.html")
+```
+
+```{r eval = FALSE, echo = FALSE}
+labs <- lapply(seq(nrow(polling)), function(i) {
+  paste0( '<p>', polling[i, "location"], '<p></p>', 
+          '<p>', polling[i, "address"],'<p></p>',
+          '</p>' ) 
+})
+```
