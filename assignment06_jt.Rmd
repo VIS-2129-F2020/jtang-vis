@@ -22,7 +22,6 @@ library(sf)
 library(leaflet)
 library(htmltools)
 library(htmlwidgets)
-library(raster)
 ```
 
 ```{r}
@@ -88,11 +87,12 @@ map <- leaflet(options = leafletOptions(minZoom = 13, maxZoom = 17)) %>%
             pal = binpal,
             values = iso_8min_walk$area_sqmi,
             opacity = 0.75,
-            title = "Total Sq. Mi. <br> of Walkshed")
-#  setMaxBounds(lng1 = 42.35253,
-#               lat1 = -71.1604,
-#               lng2 = 42.40376,
-#               lat2 = -71.06404)
+            title = "Total Sq. Mi. <br> of Walkshed") %>% 
+  setMaxBounds(lng1 = -71.17253,
+               lat1 = 42.333082,
+               lng2 = -71.041663,
+               lat2 = 42.411905)
+
 
 map
 ```
